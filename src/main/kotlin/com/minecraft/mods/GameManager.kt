@@ -2,6 +2,7 @@ package com.minecraft.mods
 
 import org.bukkit.Bukkit
 import org.bukkit.Material
+import org.bukkit.scheduler.BukkitTask
 import java.util.*
 
 object GameManager {
@@ -21,6 +22,7 @@ object GameManager {
     var state = GameState.WAITING
     var round = 1
     var players = mutableMapOf<UUID, PlayerData>()
+    private var currentTimer: BukkitTask? = null
 
     fun startGame() {
         state = GameState.RUNNING
@@ -44,11 +46,18 @@ object GameManager {
     }
 
     fun startTimer() {
+        currentTimer?.cancel()
+        
         var timeLeft = 300
-        Bukkit.getScheduler().runTaskTimer(BlockShuffle.instance, Runnable {
-            if (state != GameState.RUNNING) return@Runnable
+        currentTimer = Bukkit.getScheduler().runTaskTimer(BlockShuffle.instance, Runnable {
+            if (state != GameState.RUNNING) {
+                currentTimer?.cancel()
+                return@Runnable
+            }
 
             if (timeLeft <= 0) {
+                currentTimer?.cancel()
+                currentTimer = null
                 endRound()
                 return@Runnable
             }
@@ -65,23 +74,30 @@ object GameManager {
             players.remove(it.uuid)
         }
 
+        // No players left
+        if (players.isEmpty()) {
+            Bukkit.broadcastMessage("§cAll players failed! Game ended.")
+            state = GameState.ENDED
+            currentTimer?.cancel()
+            currentTimer = null
+            return
+        }
+
         // SOLO
         if (players.size == 1) {
             val player = players.values.first()
             if(player.completed) {
-                endGame()
+                // Continue to next round in solo mode
+                nextRound()
             } else {
                 Bukkit.getPlayer(player.uuid)?.sendMessage("You failed! Try again.")
                 state = GameState.ENDED
+                currentTimer?.cancel()
+                currentTimer = null
             }
             return
         }
 
-        // MULTIPLAYER
-        if (players.size > 1) {
-            nextRound()
-            return
-        }
         nextRound()
     }
 
@@ -99,10 +115,18 @@ object GameManager {
     }
 
     fun endGame() {
-        val winner = players.values.firstOrNull()
-        val player = Bukkit.getPlayer(winner?.uuid ?: return)
+        val winner = players.values.firstOrNull() ?: return
+        val player = Bukkit.getPlayer(winner.uuid) ?: return
 
-        Bukkit.broadcastMessage("§6${player?.name} wins Block Shuffle!")
+        Bukkit.broadcastMessage("§6${player.name} wins Block Shuffle!")
+        state = GameState.ENDED
+        currentTimer?.cancel()
+        currentTimer = null
+    }
+
+    fun cleanup() {
+        currentTimer?.cancel()
+        currentTimer = null
         state = GameState.ENDED
     }
 
@@ -110,7 +134,10 @@ object GameManager {
         return Material.entries.filter {
             it.isBlock &&
                     it.isSolid &&
-                    !it.name.contains("AIR") &&
+                    it != Material.AIR &&
+                    !it.name.endsWith("_AIR") &&
+                    it != Material.WATER &&
+                    it != Material.LAVA &&
                     !it.name.contains("WATER") &&
                     !it.name.contains("LAVA")
         }.random()

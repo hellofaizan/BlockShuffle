@@ -1,8 +1,8 @@
-name: Block Shuffle
+name: BlockShuffle
 version: '1.0.00'
 main: com.minecraft.mods.BlockShuffle
 api-version: '1.21'
 commands:
-  block shuffle:
+  blockshuffle:
     aliases: [bs]
     description: Start the block shuffle game

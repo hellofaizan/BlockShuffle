@@ -1,18 +1,27 @@
 package com.minecraft.mods
 
+import org.bukkit.event.EventHandler
 import org.bukkit.event.Listener
 import org.bukkit.event.player.PlayerMoveEvent
 
 class PlayerListener: Listener {
 
+    @EventHandler
     fun onMove(event: PlayerMoveEvent) {
+        // Only check when player actually moves to a different block
+        if (event.from.blockX == event.to.blockX && 
+            event.from.blockY == event.to.blockY && 
+            event.from.blockZ == event.to.blockZ) {
+            return
+        }
+
         if (GameManager.state != GameManager.GameState.RUNNING) return
 
         val player = event.player
         val data = GameManager.players[player.uniqueId] ?: return
         if(data.completed) return
 
-        val blockBelow = player.location.subtract(0.0, 1.0, 0.0).block.type
+        val blockBelow = event.to.block.getRelative(0, -1, 0).type
 
         if(blockBelow == data.targetBlock) {
             data.completed = true

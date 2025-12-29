@@ -13,9 +13,13 @@ class BlockShuffle : JavaPlugin() {
         instance = this
 
         server.pluginManager.registerEvents(PlayerListener(), this)
+
+        getCommand("blockshuffle")?.setExecutor(BlockShuffleCommand())
+
+        logger.info("BlockShuffle enabled!")
     }
 
     override fun onDisable() {
-        // Plugin shutdown logic
+        logger.info("BlockShuffle disabled!")
     }
 }

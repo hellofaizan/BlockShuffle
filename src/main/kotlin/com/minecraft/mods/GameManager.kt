@@ -14,11 +14,11 @@ object GameManager {
 
     data class PlayerData(
         val uuid: UUID,
-        val targetBlock: Material,
-        val completed: Boolean = false
+        var targetBlock: Material,
+        var completed: Boolean = false
     )
 
-    val state = GameState.WAITING
+    var state = GameState.WAITING
     var round = 1
     var players = mutableMapOf<UUID, PlayerData>()
 
@@ -27,6 +27,10 @@ object GameManager {
         round = 1
         players.clear()
 
+        if (Bukkit.getOnlinePlayers().size == 1) {
+            Bukkit.broadcastMessage("Solo Mode Activated")
+        }
+
         Bukkit.broadcastMessage("§a\uD83D\uDFE2 Block Shuffle Started!")
 
         for (player in Bukkit.getOnlinePlayers()) {
@@ -34,7 +38,7 @@ object GameManager {
                 player.uniqueId,
                 randomBlock()
             )
-            player.sendMessage("§eYour block: §6\${players[player.uniqueId]!!.targetBlock}")
+            player.sendMessage("§eYour block: §6${players[player.uniqueId]!!.targetBlock}")
         }
         startTimer()
     }
@@ -61,10 +65,54 @@ object GameManager {
             players.remove(it.uuid)
         }
 
-        if (players.size <= 1) {
-            endGame()
+        // SOLO
+        if (players.size == 1) {
+            val player = players.values.first()
+            if(player.completed) {
+                endGame()
+            } else {
+                Bukkit.getPlayer(player.uuid)?.sendMessage("You failed! Try again.")
+                state = GameState.ENDED
+            }
+            return
+        }
+
+        // MULTIPLAYER
+        if (players.size > 1) {
+            nextRound()
             return
         }
         nextRound()
+    }
+
+    fun nextRound() {
+        round++
+        Bukkit.broadcastMessage("§e\uD83D\uDD01 Round $round!")
+
+        players.values.forEach {
+            it.completed = false
+            it.targetBlock = randomBlock()
+            Bukkit.getPlayer(it.uuid)?.sendMessage("§aNew block: §6 ${it.targetBlock}")
+        }
+
+        startTimer()
+    }
+
+    fun endGame() {
+        val winner = players.values.firstOrNull()
+        val player = Bukkit.getPlayer(winner?.uuid ?: return)
+
+        Bukkit.broadcastMessage("§6${player?.name} wins Block Shuffle!")
+        state = GameState.ENDED
+    }
+
+    private fun randomBlock(): Material {
+        return Material.entries.filter {
+            it.isBlock &&
+                    it.isSolid &&
+                    !it.name.contains("AIR") &&
+                    !it.name.contains("WATER") &&
+                    !it.name.contains("LAVA")
+        }.random()
     }
 }

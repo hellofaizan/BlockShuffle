@@ -1,5 +1,6 @@
 round-time: 300
 min-players: 2
+allow-bossbar: true
 
 allow:
   overworld: true

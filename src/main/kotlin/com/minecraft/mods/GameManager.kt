@@ -3,6 +3,9 @@ package com.minecraft.mods
 import org.bukkit.Bukkit
 import org.bukkit.Material
 import org.bukkit.Sound
+import org.bukkit.boss.BarColor
+import org.bukkit.boss.BarStyle
+import org.bukkit.boss.BossBar
 import org.bukkit.scheduler.BukkitTask
 import java.util.*
 
@@ -24,6 +27,8 @@ object GameManager {
     var round = 1
     var players = mutableMapOf<UUID, PlayerData>()
     private var currentTimer: BukkitTask? = null
+    private var bossBar: BossBar? = null
+    private var roundTimeTotal: Int = 300
 
     private val config = BlockShuffle.instance.config
 
@@ -56,11 +61,29 @@ object GameManager {
 
     fun startTimer() {
         currentTimer?.cancel()
+        removeBossBar()
         
-        var timeLeft = config.getInt("round-time", 300)
+        roundTimeTotal = config.getInt("round-time", 300)
+        var timeLeft = roundTimeTotal
+
+        bossBar = Bukkit.createBossBar(
+            "§eRound $round - Time Left: §6${formatTime(timeLeft)}",
+            BarColor.GREEN,
+            BarStyle.SOLID
+        )
+
+        players.keys.forEach { uuid ->
+            Bukkit.getPlayer(uuid)?.let { player ->
+                bossBar?.addPlayer(player)
+            }
+        }
+        
+        bossBar?.progress = 1.0
+        
         currentTimer = Bukkit.getScheduler().runTaskTimer(BlockShuffle.instance, Runnable {
             if (state != GameState.RUNNING) {
                 currentTimer?.cancel()
+                removeBossBar()
                 return@Runnable
             }
             checkActivePlayers()
@@ -68,11 +91,51 @@ object GameManager {
             if (timeLeft <= 0) {
                 currentTimer?.cancel()
                 currentTimer = null
+                removeBossBar()
                 endRound()
                 return@Runnable
             }
+
+            val progress = timeLeft.toDouble() / roundTimeTotal.toDouble()
+            bossBar?.progress = progress.coerceIn(0.0, 1.0)
+            bossBar?.setTitle("§eRound $round - Time Left: §6${formatTime(timeLeft)}")
+
+            when {
+                timeLeft <= 30 -> bossBar?.color = BarColor.RED
+                timeLeft <= 60 -> bossBar?.color = BarColor.YELLOW
+                else -> bossBar?.color = BarColor.GREEN
+            }
+            
             timeLeft--
         }, 0L, 20L)
+    }
+
+    private  fun formatTime(seconds: Int): String {
+        val minutes = seconds / 60
+        val secs = seconds % 60
+        return String.format("%02d:%02d", minutes, secs)
+    }
+    
+    private fun removeBossBar() {
+        bossBar?.removeAll()
+        bossBar = null
+    }
+
+    private fun updateBossBarPlayers() {
+        bossBar?.let { bar ->
+            bar.players.forEach { player ->
+                if (!players.containsKey(player.uniqueId)) {
+                    bar.removePlayer(player)
+                }
+            }
+            players.keys.forEach { uuid ->
+                Bukkit.getPlayer(uuid)?.let { player ->
+                    if (!bar.players.contains(player)) {
+                        bar.addPlayer(player)
+                    }
+                }
+            }
+        }
     }
 
     private fun checkActivePlayers() {
@@ -80,12 +143,14 @@ object GameManager {
         offlinePlayers.forEach { uUID ->
             players.remove(uUID)
         }
+        updateBossBarPlayers()
 
         if (players.isEmpty() && state == GameState.RUNNING) {
             Bukkit.broadcastMessage("§cGame ended - all players have left the game.")
             state = GameState.ENDED
             currentTimer?.cancel()
             currentTimer = null
+            removeBossBar()
         }
     }
 
@@ -103,6 +168,7 @@ object GameManager {
             state = GameState.ENDED
             currentTimer?.cancel()
             currentTimer = null
+            removeBossBar()
             return
         }
 
@@ -116,6 +182,7 @@ object GameManager {
                 state = GameState.ENDED
                 currentTimer?.cancel()
                 currentTimer = null
+                removeBossBar()
             }
             return
         }
@@ -146,6 +213,7 @@ object GameManager {
         state = GameState.ENDED
         currentTimer?.cancel()
         currentTimer = null
+        removeBossBar()
     }
 
     fun quitGame(playerUuid: UUID) {
@@ -153,6 +221,8 @@ object GameManager {
 
         val player = Bukkit.getPlayer(playerUuid) ?: return
         val playerData = players.remove(playerUuid) ?: return
+        
+        bossBar?.removePlayer(player)
 
         Bukkit.broadcastMessage("§e${player.name} has left this Block Shuffle game.")
 
@@ -162,6 +232,7 @@ object GameManager {
             state = GameState.ENDED
             currentTimer?.cancel()
             currentTimer = null
+            removeBossBar()
             return
         }
 
@@ -173,6 +244,7 @@ object GameManager {
             state = GameState.ENDED
             currentTimer?.cancel()
             currentTimer = null
+            removeBossBar()
             return
         }
 
@@ -185,6 +257,9 @@ object GameManager {
 
         val playerData = players.remove(playerUuid) ?: return
         val playerName = Bukkit.getOfflinePlayer(playerUuid).name ?: "Unknown"
+        
+        // Remove from boss bar (player is offline, so we update the list)
+        updateBossBarPlayers()
 
         Bukkit.broadcastMessage("§e$playerName has disconnected from the game.")
 
@@ -194,6 +269,7 @@ object GameManager {
             state = GameState.ENDED
             currentTimer?.cancel()
             currentTimer = null
+            removeBossBar()
             return
         }
 
@@ -205,6 +281,7 @@ object GameManager {
             state = GameState.ENDED
             currentTimer?.cancel()
             currentTimer = null
+            removeBossBar()
             return
         }
 
@@ -217,7 +294,7 @@ object GameManager {
         state = GameState.ENDED
         round = 1
         players.clear()
-
+        removeBossBar()
     }
 
     private fun isAllowed(material: Material) : Boolean {

@@ -25,26 +25,31 @@ object GameManager {
     var players = mutableMapOf<UUID, PlayerData>()
     private var currentTimer: BukkitTask? = null
 
+    private val config = BlockShuffle.instance.config
+
     fun startGame() {
+        val minPlayers = config.getInt("min-players", 1)
+        
+        if (Bukkit.getOnlinePlayers().size < minPlayers) {
+            Bukkit.broadcastMessage("§cNot enough players to start Block Shuffle. Minimum required: $minPlayers")
+            state = GameState.ENDED
+            return
+        }
+
         state = GameState.RUNNING
         round = 1
         players.clear()
 
-        if (Bukkit.getOnlinePlayers().size == 1) {
-            Bukkit.broadcastMessage("Solo Mode Activated")
-        }
-
-        Bukkit.broadcastMessage("§a\uD83D\uDFE2 Block Shuffle Started!")
+        Bukkit.broadcastMessage("§a\uD83D\uDFE2 Block Shuffle started!")
 
         for (player in Bukkit.getOnlinePlayers()) {
             players[player.uniqueId] = PlayerData(
                 player.uniqueId,
-                randomBlock()
+                getWeightedBlock()
             )
             player.sendMessage("§eYour block: §6${players[player.uniqueId]!!.targetBlock}")
             // beacon activate sound at the start of game
             player.playSound(player.location, Sound.BLOCK_BEACON_ACTIVATE, 1.0f, 1.0f)
-            // player.playSound(player.location, Sound.ITEM_TOTEM_USE, 1.0f, 1.0f)
         }
         startTimer()
     }
@@ -52,14 +57,12 @@ object GameManager {
     fun startTimer() {
         currentTimer?.cancel()
         
-        var timeLeft = 300
+        var timeLeft = config.getInt("round-time", 300)
         currentTimer = Bukkit.getScheduler().runTaskTimer(BlockShuffle.instance, Runnable {
             if (state != GameState.RUNNING) {
                 currentTimer?.cancel()
                 return@Runnable
             }
-
-            // check for all the active players
             checkActivePlayers()
 
             if (timeLeft <= 0) {
@@ -78,7 +81,6 @@ object GameManager {
             players.remove(uUID)
         }
 
-        // If no one is active, end the game
         if (players.isEmpty() && state == GameState.RUNNING) {
             Bukkit.broadcastMessage("§cGame ended - all players have left the game.")
             state = GameState.ENDED
@@ -96,7 +98,6 @@ object GameManager {
             players.remove(it.uuid)
         }
 
-        // No players left
         if (players.isEmpty()) {
             Bukkit.broadcastMessage("§cAll players failed! Game ended.")
             state = GameState.ENDED
@@ -128,7 +129,7 @@ object GameManager {
 
         players.values.forEach {
             it.completed = false
-            it.targetBlock = randomBlock()
+            it.targetBlock = getWeightedBlock()
             val player = Bukkit.getPlayer(it.uuid)
             player?.sendMessage("§aNew block: §6 ${it.targetBlock}")
             player?.playSound(player.location, Sound.BLOCK_BEACON_ACTIVATE, 1.0f, 1.0f)
@@ -219,16 +220,134 @@ object GameManager {
 
     }
 
-    private fun randomBlock(): Material {
-        return Material.entries.filter {
-            it.isBlock &&
-                    it.isSolid &&
-                    it != Material.AIR &&
-                    !it.name.endsWith("_AIR") &&
-                    it != Material.WATER &&
-                    it != Material.LAVA &&
-                    !it.name.contains("WATER") &&
-                    !it.name.contains("LAVA")
-        }.random()
+    private fun isAllowed(material: Material) : Boolean {
+        val config = BlockShuffle.instance.config
+
+        if (config.getStringList("blacklist").contains(material.name)) return false
+
+        val allowSection = config.getConfigurationSection("allow") ?: return true
+        val allowNether = allowSection.getBoolean("nether", true)
+        val allowEnd = allowSection.getBoolean("end", false)
+
+        if (!allowNether && material.name.contains("NETHER", ignoreCase = true)) return false
+
+        if (!allowEnd && material.name.contains("END", ignoreCase = true) && !material.name.contains("END_ROD")) return false
+
+        if (!material.isBlock || !material.isSolid) return false
+
+        if (material == Material.AIR ||
+            material == Material.WATER ||
+            material == Material.LAVA ||
+            material.name.endsWith("_AIR") ||
+            material.name.contains("WATER") ||
+            material.name.contains("LAVA")) return false
+        return true
     }
+
+    private fun getBlockWeight(material: Material): Int {
+        val config = BlockShuffle.instance.config
+        val categoryWeights = config.getConfigurationSection("weight-categories") ?: return 5 // default weight
+        
+        val name = material.name.uppercase()
+        
+        // Check for individual block override first
+        val individualWeights = config.getConfigurationSection("weights")
+        if (individualWeights != null && individualWeights.contains(material.name)) {
+            return individualWeights.getInt(material.name, 5)
+        }
+        
+        // Categorize blocks by name patterns and assign weights
+        // Order matters: check more specific patterns first
+        
+        // Common natural blocks (exact matches only) - check first
+        if (name == "STONE" || name == "COBBLESTONE" || name == "DIRT" || name == "GRASS_BLOCK") {
+            return categoryWeights.getInt("common-blocks", 10)
+        }
+        
+        // Ultra rare blocks (emerald, ancient debris, etc.)
+        if (name.contains("EMERALD") || name.contains("ANCIENT_DEBRIS") || name.contains("NETHERITE")) {
+            return categoryWeights.getInt("ultra-rare", 1)
+        }
+        
+        // Rare ores (diamond, lapis, redstone)
+        if (name.contains("DIAMOND") || name.contains("LAPIS") || name.contains("REDSTONE_ORE")) {
+            return categoryWeights.getInt("rare-ores", 2)
+        }
+        
+        // Uncommon ores (iron, copper, gold)
+        if (name.contains("IRON_ORE") || name.contains("COPPER_ORE") || name.contains("GOLD_ORE")) {
+            return categoryWeights.getInt("uncommon-ores", 4)
+        }
+        
+        // Common ores (coal)
+        if (name.contains("COAL_ORE")) {
+            return categoryWeights.getInt("common-ores", 6)
+        }
+        
+        // Nether exclusive blocks (check before end blocks to avoid conflicts)
+        if (name.contains("NETHER") && !name.contains("NETHERITE")) {
+            return categoryWeights.getInt("nether-blocks", 5)
+        }
+        
+        // End exclusive blocks
+        if (name.contains("END") && !name.contains("END_ROD")) {
+            return categoryWeights.getInt("end-blocks", 3)
+        }
+        
+        // Decorative blocks (glass, stained, etc.)
+        if (name.contains("GLASS") || name.contains("STAINED") || name.contains("WOOL") || name.contains("CARPET")) {
+            return categoryWeights.getInt("decorative", 7)
+        }
+        
+        // Building blocks (stone variants, wood, etc.) - check last as it's broad
+        // Note: STONE, DIRT, GRASS already handled above, so this catches variants
+        if (name.contains("STONE") || name.contains("BRICK") || name.contains("CONCRETE") || 
+            name.contains("TERRACOTTA") || name.contains("LOG") || name.contains("PLANK") ||
+            name.contains("WOOD") || name.contains("SAND") || name.contains("GRAVEL") || 
+            name.contains("CLAY") || (name.contains("DIRT") && name != "DIRT") ||
+            (name.contains("GRASS") && name != "GRASS_BLOCK")) {
+            return categoryWeights.getInt("building-blocks", 8)
+        }
+        
+        // Default weight for unclassified blocks
+        return categoryWeights.getInt("default", 5)
+    }
+    
+    private fun getWeightedBlock(): Material {
+        val config = BlockShuffle.instance.config
+        val reduction = config.getDouble("difficulty.weight-reduction-per-round", 0.15)
+
+        // Get all allowed blocks
+        val allAllowedBlocks = Material.entries.filter { isAllowed(it) }
+        
+        if (allAllowedBlocks.isEmpty()) {
+            BlockShuffle.instance.logger.warning("No allowed blocks found! Using STONE as fallback")
+            return Material.STONE
+        }
+
+        val weightedList = mutableListOf<Material>()
+
+        // Build weighted list from all allowed blocks
+        for (material in allAllowedBlocks) {
+            val baseWeight = getBlockWeight(material)
+            // Calculate scaled weight: easier blocks (higher weight) get reduced more per round
+            // So harder blocks (lower weight) become more common as rounds progress
+            val scaledWeight = (baseWeight - (round - 1) * reduction).toInt().coerceAtLeast(1)
+            
+            if (scaledWeight > 0) {
+                repeat(scaledWeight) {
+                    weightedList.add(material)
+                }
+            }
+        }
+
+        // Fallback if no valid blocks found (shouldn't happen, but safety check)
+        if (weightedList.isEmpty()) {
+            BlockShuffle.instance.logger.warning("No valid weighted blocks found! Using first allowed block")
+            return allAllowedBlocks.firstOrNull() ?: Material.STONE
+        }
+
+        return weightedList.random()
+    }
+
 }

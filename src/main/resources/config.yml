@@ -1,0 +1,65 @@
+round-time: 300
+min-players: 2
+
+allow:
+  overworld: true
+  nether: true
+  end: false
+
+messages:
+  start: "&a🟢 Block Shuffle started!"
+  win: "&6🏆 {player} won the game!"
+  fail: "&cYou failed this round!"
+
+# Weight categories - automatically applies to all blocks based on their type
+# Higher weight = more common/easier blocks
+weight-categories:
+  common-blocks: 10      # Stone, cobblestone, dirt, grass_block
+  building-blocks: 8     # Stone variants, wood, logs, planks, bricks
+  decorative: 7          # Glass, wool, carpets, stained blocks
+  common-ores: 6         # Coal ores
+  nether-blocks: 5       # Nether-specific blocks (if enabled)
+  default: 5             # Unclassified blocks
+  uncommon-ores: 4       # Iron, copper, gold ores
+  end-blocks: 3          # End-specific blocks (if enabled)
+  rare-ores: 2           # Diamond, lapis, redstone ores
+  ultra-rare: 1          # Emerald, ancient debris, netherite
+
+weights:
+  # You can still specify individual blocks here to override category weights
+  # STONE: 10
+  # DIRT: 9
+  # DIAMOND_ORE: 1
+
+difficulty:
+  weight-reduction-per-round: 0.15
+
+blacklist:
+  - END_PORTAL_FRAME
+  - SPAWNER
+  - BARRIER
+  - DEEPSLATE_EMERALD_ORE
+  - ANCIENT_DEBRIS
+  - LODESTONE
+  - COMMAND_BLOCK
+  - STRUCTURE_BLOCK
+  - JIGSAW
+  - ENCHANTING_TABLE
+  - BEACON
+  - DRAGON_EGG
+  - NETHER_PORTAL
+  - END_PORTAL
+  - SOUL_CAMPFIRE
+  - CAMPFIRE
+  - CHIPPED_ANVIL
+  - DAMAGED_ANVIL
+  - ARMOR_STAND
+  - PAINTING
+  - ENDER_DRAGON_HEAD
+  - WITHER_SKELETON_SKULL
+  - SKELETON_SKULL
+  - ZOMBIE_HEAD
+  - CREEPER_HEAD
+  - PLAYER_HEAD
+  - DRAGON_HEAD
+  - PIGLIN_HEAD

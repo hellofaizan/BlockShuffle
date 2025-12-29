@@ -9,10 +9,12 @@ class BlockShuffle : JavaPlugin() {
     }
 
     override fun onEnable() {
-        // Plugin startup logic
         instance = this
+        saveDefaultConfig()
+
         server.pluginManager.registerEvents(PlayerListener(), this)
         getCommand("blockshuffle")?.setExecutor(BlockShuffleCommand())
+
         logger.info("BlockShuffle enabled!")
     }
 

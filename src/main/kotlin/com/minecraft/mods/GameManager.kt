@@ -249,67 +249,52 @@ object GameManager {
         val categoryWeights = config.getConfigurationSection("weight-categories") ?: return 5 // default weight
         
         val name = material.name.uppercase()
-        
-        // Check for individual block override first
+
         val individualWeights = config.getConfigurationSection("weights")
         if (individualWeights != null && individualWeights.contains(material.name)) {
             return individualWeights.getInt(material.name, 5)
         }
-        
-        // Categorize blocks by name patterns and assign weights
-        // Order matters: check more specific patterns first
-        
-        // Common natural blocks (exact matches only) - check first
+
         if (name == "STONE" || name == "COBBLESTONE" || name == "DIRT" || name == "GRASS_BLOCK") {
             return categoryWeights.getInt("common-blocks", 10)
         }
-        
-        // Ultra rare blocks (emerald, ancient debris, etc.)
+
         if (name.contains("EMERALD") || name.contains("ANCIENT_DEBRIS") || name.contains("NETHERITE")) {
             return categoryWeights.getInt("ultra-rare", 1)
         }
-        
-        // Rare ores (diamond, lapis, redstone)
+
         if (name.contains("DIAMOND") || name.contains("LAPIS") || name.contains("REDSTONE_ORE")) {
             return categoryWeights.getInt("rare-ores", 2)
         }
-        
-        // Uncommon ores (iron, copper, gold)
+
         if (name.contains("IRON_ORE") || name.contains("COPPER_ORE") || name.contains("GOLD_ORE")) {
             return categoryWeights.getInt("uncommon-ores", 4)
         }
-        
-        // Common ores (coal)
+
         if (name.contains("COAL_ORE")) {
             return categoryWeights.getInt("common-ores", 6)
         }
-        
-        // Nether exclusive blocks (check before end blocks to avoid conflicts)
+
         if (name.contains("NETHER") && !name.contains("NETHERITE")) {
             return categoryWeights.getInt("nether-blocks", 5)
         }
-        
-        // End exclusive blocks
+
         if (name.contains("END") && !name.contains("END_ROD")) {
             return categoryWeights.getInt("end-blocks", 3)
         }
-        
-        // Decorative blocks (glass, stained, etc.)
+
         if (name.contains("GLASS") || name.contains("STAINED") || name.contains("WOOL") || name.contains("CARPET")) {
             return categoryWeights.getInt("decorative", 7)
         }
-        
-        // Building blocks (stone variants, wood, etc.) - check last as it's broad
-        // Note: STONE, DIRT, GRASS already handled above, so this catches variants
+
         if (name.contains("STONE") || name.contains("BRICK") || name.contains("CONCRETE") || 
             name.contains("TERRACOTTA") || name.contains("LOG") || name.contains("PLANK") ||
             name.contains("WOOD") || name.contains("SAND") || name.contains("GRAVEL") || 
-            name.contains("CLAY") || (name.contains("DIRT") && name != "DIRT") ||
-            (name.contains("GRASS") && name != "GRASS_BLOCK")) {
+            name.contains("CLAY") || (name.contains("DIRT")) ||
+            (name.contains("GRASS"))) {
             return categoryWeights.getInt("building-blocks", 8)
         }
-        
-        // Default weight for unclassified blocks
+
         return categoryWeights.getInt("default", 5)
     }
     
@@ -317,7 +302,6 @@ object GameManager {
         val config = BlockShuffle.instance.config
         val reduction = config.getDouble("difficulty.weight-reduction-per-round", 0.15)
 
-        // Get all allowed blocks
         val allAllowedBlocks = Material.entries.filter { isAllowed(it) }
         
         if (allAllowedBlocks.isEmpty()) {
@@ -327,11 +311,8 @@ object GameManager {
 
         val weightedList = mutableListOf<Material>()
 
-        // Build weighted list from all allowed blocks
         for (material in allAllowedBlocks) {
             val baseWeight = getBlockWeight(material)
-            // Calculate scaled weight: easier blocks (higher weight) get reduced more per round
-            // So harder blocks (lower weight) become more common as rounds progress
             val scaledWeight = (baseWeight - (round - 1) * reduction).toInt().coerceAtLeast(1)
             
             if (scaledWeight > 0) {
@@ -341,7 +322,6 @@ object GameManager {
             }
         }
 
-        // Fallback if no valid blocks found (shouldn't happen, but safety check)
         if (weightedList.isEmpty()) {
             BlockShuffle.instance.logger.warning("No valid weighted blocks found! Using first allowed block")
             return allAllowedBlocks.firstOrNull() ?: Material.STONE

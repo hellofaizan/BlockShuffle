@@ -1,8 +1,10 @@
 package com.minecraft.mods
 
+import org.bukkit.Sound
 import org.bukkit.event.EventHandler
 import org.bukkit.event.Listener
 import org.bukkit.event.player.PlayerMoveEvent
+import org.bukkit.event.player.PlayerQuitEvent
 
 class PlayerListener: Listener {
 
@@ -27,8 +29,20 @@ class PlayerListener: Listener {
             data.completed = true
             player.sendMessage("§a✔ You are standing on the given block!")
 
+            player.playSound(player.location, Sound.BLOCK_BEACON_DEACTIVATE, 1.0f, 1.0f)
+
             if(GameManager.players.values.all { it.completed }) {
                 GameManager.endRound()
+            }
+        }
+    }
+
+    @EventHandler
+    fun onPlayerQuit(event: PlayerQuitEvent) {
+        if (GameManager.state == GameManager.GameState.RUNNING) {
+            val player = event.player
+            if (GameManager.players.containsKey(player.uniqueId)) {
+                GameManager.handlePlayerDisconnect(player.uniqueId)
             }
         }
     }

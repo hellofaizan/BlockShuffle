@@ -2,6 +2,7 @@ package com.minecraft.mods
 
 import org.bukkit.Bukkit
 import org.bukkit.Material
+import org.bukkit.Sound
 import org.bukkit.scheduler.BukkitTask
 import java.util.*
 
@@ -41,6 +42,9 @@ object GameManager {
                 randomBlock()
             )
             player.sendMessage("§eYour block: §6${players[player.uniqueId]!!.targetBlock}")
+            // beacon activate sound at the start of game
+            player.playSound(player.location, Sound.BLOCK_BEACON_ACTIVATE, 1.0f, 1.0f)
+            // player.playSound(player.location, Sound.ITEM_TOTEM_USE, 1.0f, 1.0f)
         }
         startTimer()
     }
@@ -55,6 +59,9 @@ object GameManager {
                 return@Runnable
             }
 
+            // check for all the active players
+            checkActivePlayers()
+
             if (timeLeft <= 0) {
                 currentTimer?.cancel()
                 currentTimer = null
@@ -63,6 +70,21 @@ object GameManager {
             }
             timeLeft--
         }, 0L, 20L)
+    }
+
+    private fun checkActivePlayers() {
+        val offlinePlayers = players.keys.filter { Bukkit.getPlayer(it) == null }
+        offlinePlayers.forEach { uUID ->
+            players.remove(uUID)
+        }
+
+        // If no one is active, end the game
+        if (players.isEmpty() && state == GameState.RUNNING) {
+            Bukkit.broadcastMessage("§cGame ended - all players have left the game.")
+            state = GameState.ENDED
+            currentTimer?.cancel()
+            currentTimer = null
+        }
     }
 
     fun endRound() {
@@ -87,7 +109,6 @@ object GameManager {
         if (players.size == 1) {
             val player = players.values.first()
             if(player.completed) {
-                // Continue to next round in solo mode
                 nextRound()
             } else {
                 Bukkit.getPlayer(player.uuid)?.sendMessage("You failed! Try again.")
@@ -108,7 +129,9 @@ object GameManager {
         players.values.forEach {
             it.completed = false
             it.targetBlock = randomBlock()
-            Bukkit.getPlayer(it.uuid)?.sendMessage("§aNew block: §6 ${it.targetBlock}")
+            val player = Bukkit.getPlayer(it.uuid)
+            player?.sendMessage("§aNew block: §6 ${it.targetBlock}")
+            player?.playSound(player.location, Sound.BLOCK_BEACON_ACTIVATE, 1.0f, 1.0f)
         }
 
         startTimer()
@@ -156,10 +179,44 @@ object GameManager {
         Bukkit.broadcastMessage("§e${player.name} has quit the game. ${players.size} players remaining.")
     }
 
+    fun handlePlayerDisconnect(playerUuid: UUID) {
+        if (state != GameState.RUNNING) return
+
+        val playerData = players.remove(playerUuid) ?: return
+        val playerName = Bukkit.getOfflinePlayer(playerUuid).name ?: "Unknown"
+
+        Bukkit.broadcastMessage("§e$playerName has disconnected from the game.")
+
+        // If no players left, end the game
+        if (players.isEmpty()) {
+            Bukkit.broadcastMessage("§cGame ended - all players have left.")
+            state = GameState.ENDED
+            currentTimer?.cancel()
+            currentTimer = null
+            return
+        }
+
+        // In solo mode, end the game
+        if (players.size == 1) {
+            val remainingPlayer = Bukkit.getPlayer(players.values.first().uuid)
+            remainingPlayer?.sendMessage("§aYou are the last player remaining!")
+            Bukkit.broadcastMessage("§a${remainingPlayer?.name} is the last player remaining!")
+            state = GameState.ENDED
+            currentTimer?.cancel()
+            currentTimer = null
+            return
+        }
+
+        Bukkit.broadcastMessage("§e$playerName has disconnected. ${players.size} players remaining.")
+    }
+
     fun cleanup() {
         currentTimer?.cancel()
         currentTimer = null
         state = GameState.ENDED
+        round = 1
+        players.clear()
+
     }
 
     private fun randomBlock(): Material {

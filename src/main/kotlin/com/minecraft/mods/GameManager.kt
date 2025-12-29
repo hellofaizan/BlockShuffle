@@ -124,6 +124,38 @@ object GameManager {
         currentTimer = null
     }
 
+    fun quitGame(playerUuid: UUID) {
+        if (state != GameState.RUNNING) return
+
+        val player = Bukkit.getPlayer(playerUuid) ?: return
+        val playerData = players.remove(playerUuid) ?: return
+
+        Bukkit.broadcastMessage("§e${player.name} has left this Block Shuffle game.")
+
+        // If no players left, end the game
+        if (players.isEmpty()) {
+            Bukkit.broadcastMessage("§cGame ended - no players remaining.")
+            state = GameState.ENDED
+            currentTimer?.cancel()
+            currentTimer = null
+            return
+        }
+
+        // In solo mode, end the game
+        if (players.size == 1) {
+            val remainingPlayer = Bukkit.getPlayer(players.values.first().uuid)
+            remainingPlayer?.sendMessage("§aYou are the last player remaining!")
+            Bukkit.broadcastMessage("§a${remainingPlayer?.name} is the last player remaining!")
+            state = GameState.ENDED
+            currentTimer?.cancel()
+            currentTimer = null
+            return
+        }
+
+        // Multiple players still in game - continue
+        Bukkit.broadcastMessage("§e${player.name} has quit the game. ${players.size} players remaining.")
+    }
+
     fun cleanup() {
         currentTimer?.cancel()
         currentTimer = null

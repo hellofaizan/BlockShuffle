@@ -1,5 +1,6 @@
 package com.minecraft.mods
 
+import net.kyori.adventure.text.Component
 import org.bukkit.Bukkit
 import org.bukkit.Material
 import org.bukkit.Sound
@@ -27,8 +28,12 @@ object GameManager {
     var round = 1
     var players = mutableMapOf<UUID, PlayerData>()
     private var currentTimer: BukkitTask? = null
+    private var actionBarTask: BukkitTask? = null
     private var bossBar: BossBar? = null
     private var roundTimeTotal: Int = 300
+
+    private var halfTimeAnnounced = false
+    private var lastSecondAnnounced = -1
 
     private val config = BlockShuffle.instance.config
 
@@ -57,11 +62,14 @@ object GameManager {
             player.playSound(player.location, Sound.BLOCK_BEACON_ACTIVATE, 1.0f, 1.0f)
         }
         startTimer()
+        startActionBar()
     }
 
     fun startTimer() {
         currentTimer?.cancel()
         removeBossBar()
+        halfTimeAnnounced = false
+        lastSecondAnnounced = -1
         
         roundTimeTotal = config.getInt("round-time", 300)
         var timeLeft = roundTimeTotal
@@ -87,6 +95,36 @@ object GameManager {
                 return@Runnable
             }
             checkActivePlayers()
+
+            // Halftime announcement
+            if (!halfTimeAnnounced && timeLeft <= roundTimeTotal / 2) {
+                Bukkit.broadcastMessage("§e\u23F1 Half time! §6${formatTime(timeLeft)} §eremaining.")
+                // Play sound to all players
+                players.keys.forEach { uuid ->
+                    Bukkit.getPlayer(uuid)?.playSound(
+                        Bukkit.getPlayer(uuid)?.location ?: return@forEach,
+                        Sound.BLOCK_NOTE_BLOCK_PLING,
+                        1.0f,
+                        1.0f
+                    )
+                }
+                halfTimeAnnounced = true
+            }
+
+            // last 10 seconds countdown
+            if (timeLeft in 1..10 && timeLeft != lastSecondAnnounced) {
+                lastSecondAnnounced = timeLeft
+
+                players.values.filter { !it.completed }
+                    .forEach { data ->
+                        val player = Bukkit.getPlayer(data.uuid) ?: return@forEach
+                        player.sendActionBar(Component.text("§c⚠ §e$timeLeft §c⚠"))
+                        val pitch = 0.5f + (11 - timeLeft) * 0.1f // 0.5f to 1.5f
+                        player.playSound(player.location, Sound.BLOCK_NOTE_BLOCK_BELL, 1.0f, pitch)
+                    }
+            } else if (timeLeft > 10 && lastSecondAnnounced in 1..10) {
+                lastSecondAnnounced = -1
+            }
 
             if (timeLeft <= 0) {
                 currentTimer?.cancel()
@@ -114,6 +152,58 @@ object GameManager {
         val minutes = seconds / 60
         val secs = seconds % 60
         return String.format("%02d:%02d", minutes, secs)
+    }
+
+    private fun startActionBar() {
+        // Cancel existing action bar task if any
+        actionBarTask?.cancel()
+        
+        actionBarTask = Bukkit.getScheduler().runTaskTimer(
+            BlockShuffle.instance,
+            Runnable {
+                if (state != GameState.RUNNING) {
+                    // Clear action bar for all players when game ends
+                    players.keys.forEach { uuid ->
+                        Bukkit.getPlayer(uuid)?.sendActionBar(Component.empty())
+                    }
+                    actionBarTask?.cancel()
+                    actionBarTask = null
+                    return@Runnable
+                }
+
+                // Skip action bar update during countdown (last 10 seconds)
+                // The countdown timer handles action bar updates during that time
+                if (lastSecondAnnounced in 1..10) {
+                    return@Runnable
+                }
+
+                players.forEach { (uuid, data) ->
+                    val player = Bukkit.getPlayer(uuid) ?: return@forEach
+                    
+                    // Don't show action bar if player completed
+                    if (data.completed) {
+                        player.sendActionBar(Component.text("§a✔ Completed!"))
+                    } else {
+                        val blockName = data.targetBlock.name.replace("_", " ").lowercase()
+                            .split(" ").joinToString(" ") { it.capitalize() }
+                        player.sendActionBar(
+                            Component.text("§eFind: §6$blockName")
+                        )
+                    }
+                }
+            },
+            0L,
+            20L
+        )
+    }
+    
+    private fun stopActionBar() {
+        actionBarTask?.cancel()
+        actionBarTask = null
+
+        players.keys.forEach { uuid ->
+            Bukkit.getPlayer(uuid)?.sendActionBar(Component.empty())
+        }
     }
     
     private fun removeBossBar() {
@@ -151,6 +241,7 @@ object GameManager {
             currentTimer?.cancel()
             currentTimer = null
             removeBossBar()
+            stopActionBar()
         }
     }
 
@@ -169,6 +260,7 @@ object GameManager {
             currentTimer?.cancel()
             currentTimer = null
             removeBossBar()
+            stopActionBar()
             return
         }
 
@@ -183,6 +275,7 @@ object GameManager {
                 currentTimer?.cancel()
                 currentTimer = null
                 removeBossBar()
+                stopActionBar()
             }
             return
         }
@@ -214,6 +307,7 @@ object GameManager {
         currentTimer?.cancel()
         currentTimer = null
         removeBossBar()
+        stopActionBar()
     }
 
     fun quitGame(playerUuid: UUID) {
@@ -226,13 +320,13 @@ object GameManager {
 
         Bukkit.broadcastMessage("§e${player.name} has left this Block Shuffle game.")
 
-        // If no players left, end the game
         if (players.isEmpty()) {
             Bukkit.broadcastMessage("§cGame ended - no players remaining.")
             state = GameState.ENDED
             currentTimer?.cancel()
             currentTimer = null
             removeBossBar()
+            stopActionBar()
             return
         }
 
@@ -245,6 +339,7 @@ object GameManager {
             currentTimer?.cancel()
             currentTimer = null
             removeBossBar()
+            stopActionBar()
             return
         }
 
@@ -257,8 +352,7 @@ object GameManager {
 
         val playerData = players.remove(playerUuid) ?: return
         val playerName = Bukkit.getOfflinePlayer(playerUuid).name ?: "Unknown"
-        
-        // Remove from boss bar (player is offline, so we update the list)
+
         updateBossBarPlayers()
 
         Bukkit.broadcastMessage("§e$playerName has disconnected from the game.")
@@ -270,6 +364,7 @@ object GameManager {
             currentTimer?.cancel()
             currentTimer = null
             removeBossBar()
+            stopActionBar()
             return
         }
 
@@ -282,6 +377,7 @@ object GameManager {
             currentTimer?.cancel()
             currentTimer = null
             removeBossBar()
+            stopActionBar()
             return
         }
 
@@ -295,6 +391,7 @@ object GameManager {
         round = 1
         players.clear()
         removeBossBar()
+        stopActionBar()
     }
 
     private fun isAllowed(material: Material) : Boolean {

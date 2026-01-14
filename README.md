@@ -188,11 +188,3 @@ The game adapts automatically to keep gameplay fair and exciting.
 ### 💬 Discord
 
 [https://discord.gg/vUHMxPvege](https://discord.gg/vUHMxPvege)
-
-If you want, I can also:
-- Optimize this for **Modrinth SEO**
-- Create a **short description**
-- Write a **changelog template**
-- Design a **banner image text**
-
-Just tell me 👍
